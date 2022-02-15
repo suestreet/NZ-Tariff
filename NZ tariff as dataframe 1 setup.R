@@ -68,6 +68,9 @@ tariff$tariff01 <- gsub("- - ", "- - ", tariff$tariff01)
 tariff$tariff01 <- gsub("– – ", "- - ", tariff$tariff01)
 tariff$tariff01 <- gsub("- – ", "- - ", tariff$tariff01)
 tariff$tariff01 <- gsub("\t- - ", "\t- - ", tariff$tariff01)
+tariff$tariff01 <- gsub("­", "", tariff$tariff01) 
+
+
 #tariff$tariff01 <- gsub("-", "-", tariff$tariff01)
 #tariff$tariff01 <- gsub("-", "-", tariff$tariff01)
 #tariff$tariff01 <- gsub("-", "-", tariff$tariff01)
@@ -135,13 +138,7 @@ tariff <- subset(tariff, !continued)
 # And renumber as lines have been removed
 tariff$line_number <- c(1:dim(tariff)[1])
 
-# check results for hyphens
-check <- tariff %>%
-  filter(branch_hyphen_level == 0, branch_dots_level == 0, !continued) %>% 
-  
+saveRDS(tariff, "WTD/tariff_so_far.rds", ascii=FALSE)
 
-
-#
-
-
-saveRDS(tariff, "WTD/tariff_so_far.RDS")
+check <- tariff %>% 
+  select(tariff01, Tariff_Level, branch_hyphen_level, branch_dots_level)
