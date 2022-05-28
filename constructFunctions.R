@@ -15,7 +15,8 @@ startBuildHS8 <- function(lineText){
   lineText <- sub("^u\t","\t", lineText)
   lineText <- sub("^T\t","\t", lineText)
   lineText <- sub("^S\t","\t", lineText)
-  lineText <- sub(" \t","\t",lineText)
+  lineText <- sub(" \t","\t",lineText) # Tidy leading spaces
+  lineText <- sub("^(?=\\d)","\t", lineText, perl=TRUE) #should be a leading tab for tariff code numbering
   tariffNumber <- paste(substr(lineText, 2,5),
                         substr(lineText, 7,8),
                         substr(lineText, 10,11), sep="")
@@ -23,12 +24,24 @@ startBuildHS8 <- function(lineText){
   lineText <- sub("[0-9]{2}[A-Z]\t","",lineText) # Delete stats code off front of string
   lineText <- sub("(^[A-z]+\t)|(^ [A-z]+\t)","",lineText)
   lineText <- sub("(^\\sNo\\.\t)|(^No\\.\t)","",lineText)
+  lineText <- sub("(^m2\t)|(^ m2\t)","",lineText)
+  lineText <- sub("(^m?\t)|(^ m?\t)","",lineText)
+  lineText <- sub("(^m²\t)|(^ m²\t)|(^\tm²\t)","",lineText)
+  lineText <- sub("(^m3\t)|(^ m3\t)","",lineText)
+  lineText <- sub("(^m?\t)|(^ m?\t)","",lineText)
+  lineText <- sub("(^\\.\\.\t)|(^ \\.\\.\t)|(^\t\\.\\.\t)","",lineText)
   lineText <- sub("^([a-z] [a-z]{2})+\t","",lineText)
   lineText <- sub("^\\.+\t","",lineText)
   lineText <- sub("^\t+","",lineText)
   lineText <- sub("^( \t)+","",lineText)
-  lineText <- sub("\\.\t","",lineText)
+  lineText <- sub("\\.\t","\t",lineText) # TRY THIS
   lineText <- sub("\t+$","\t",lineText)
+  lineText <- sub("\\s+$","",lineText)
+  lineText <- sub("\t5\tFree$", "", lineText)
+  lineText <- sub("\t10\tFree$", "", lineText)
+  lineText <- sub("\tFree\tFree$", "", lineText)
+  # Will need to manually remove the double hyphens I think e.g. 1604.13.01 Salmon and brisling.
+  # Excel deals with them gracefully
   result <- list(tariffNumber, lineText)
   return(result)
 }
@@ -47,6 +60,7 @@ startSubhead <- function(lineText){
   lineText <- sub("[0-9]{2}[A-Z]\t","",lineText)
   lineText <- sub("^[a-z]+\t","",lineText)
   lineText <- sub("^([a-z] [a-z]{2})+\t","",lineText)
+  lineText <- sub("(^\\sNo\\.\t)|(^No\\.\t)","",lineText)
 #  lineText <- sub("\\s\t","\t",lineText)
   lineText <- sub("^\t+","",lineText)
   lineText <- sub("\t+","",lineText)
@@ -69,6 +83,7 @@ startStats <- function(lineText, dots_level){
   lineText <- sub("^\t*pr\\s*\t+\\s*", "", lineText)
   lineText <- sub("^\t*m3\\s*\t+\\s*", "", lineText)
   lineText <- sub("^\t*m2\\s*\t+\\s*", "", lineText)
+  lineText <- sub("^\t*M2\\s*\t+\\s*", "", lineText)
   lineText <- sub("^\t*tne\\s*\t+\\s*", "", lineText)
   lineText <- sub("^\t*\\.\\.\\s*\t+\\s*", "", lineText)
   lineText <- sub("^\t*", "", lineText)
