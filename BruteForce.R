@@ -1,12 +1,12 @@
-#setwd("~/NZ-Tariff")
-setwd("D:/Policy Working Area/Trade/WTO/IDB implementation of HS/WTD 2024 HS22")
+setwd("/home/sue/NZ-Tariff")
+#setwd("D:/Policy Working Area/Trade/WTO/IDB implementation of HS/WTD 2024 HS22")
 
 library(tidyr)
 library(dplyr)
 library(stringr)
 library(openxlsx)
 
-data_location <- if_else(getwd()=='~/NZ-Tariff/', '~/Documents/Tariff/', 'WTD/')
+data_location <- if_else(getwd()=='/home/sue/NZ-Tariff', '~/WTO/', 'WTD/')
 
 ######################################################################
 #
@@ -48,7 +48,7 @@ remove(addChapter, chapter, i, con)
 #
 ######################################################################
 
-t.WTO.prev <- readWorkbook(paste(data_location, 'NZ_tariff_August_2023.xlsx', sep=''))
+t.WTO.prev <- readWorkbook(paste(data_location, 'NZ_tariff_2023.xlsx', sep=''))
 
 ######################################################################
 #
@@ -65,14 +65,8 @@ t.cusmod.rate <- read.csv(paste(data_location, 'Tariff_Rates.csv', sep=''), sep 
                                          'numeric', 'integer', rep('numeric', 6)))
 
 # Format dates
-
-#t.cusmod.detail$Tic.Start.Date <- as.Date(strptime(t.cusmod.detail$Tic.Start.Date,'%b%d%Y%I:%M'))
-#t.cusmod.detail$Tic.Expiry.Date <- as.Date(strptime(t.cusmod.detail$Tic.Expiry.Date,'%b%d%Y%I:%M'))
-
-#t.cusmod.rate$Tdrc.Start.Date <- as.Date(strptime(t.cusmod.rate$Tdrc.Start.Date,'%b%d%Y%I:%M'))
-#t.cusmod.rate$Tdrc.Expiry.Date <- as.Date(strptime(t.cusmod.rate$Tdrc.Expiry.Date,'%b%d%Y%I:%M'))
-
-# filter to be current in 2024 - Start before end of 2024, finish after start 2024
+# Filter to be current in 2024 - Start before end of 2024, finish after start 2024
+# Take the most recent, just in case
 
 end_period <- as.Date('2025-1-01')
 start_period <- as.Date('2023-12-31')
@@ -87,7 +81,7 @@ t.cusmod.detail <- t.cusmod.detail %>%
   mutate(maxDate = max(Tic.Start.Date)) %>% 
   filter(Tic.Start.Date == maxDate) %>% 
   select(-maxDate) %>% 
-  ungroup
+  ungroup %>% 
   unique
 
 t.cusmod.rate <- t.cusmod.rate %>% 
@@ -96,11 +90,12 @@ t.cusmod.rate <- t.cusmod.rate %>%
   filter(Tdrc.Expiry.Date >= start_period) %>%
   filter(Tdrc.Start.Date <= end_period)%>% 
   group_by(Tdrc.Tariff.Level.1, Tdrc.Tariff.Level.2, 
-           Tdrc.Tariff.Level.3, Tdrc.Tariff.Level.4) %>% 
+           Tdrc.Tariff.Level.3, Tdrc.Tariff.Level.4,
+           Tdrc.Rate.Group) %>% 
   mutate(maxDate = max(Tdrc.Start.Date)) %>% 
   filter(Tdrc.Start.Date == maxDate) %>% 
   select(-maxDate) %>% 
-  ungroup
+  ungroup %>% 
   unique
 
 # Select fields, and modify names
@@ -146,50 +141,41 @@ t.print.8d <- t.print %>%
   filter(t8d) %>% 
   mutate(t8d_item = str_extract(line, '\\d{4}\\.\\d{2}\\.\\d{2}'))
 
-t.cusmod.old.error <-  t.cusmod.old %>%
-  inner_join(t.print.8d, by = 't8d_item')
+t.cusmod.old.lines <-  t.cusmod.old %>%
+  anti_join(t.print.8d, by = 't8d_item')
 
-# None from previous line
+# Any lines in print that aren't in the CusMod version?
 
-t.cusmod.old.error <-  t.print.8d %>%
-  filter(t8d_item %in% affected_lines)
+t.cusmod.missing <- t.print.8d  %>% 
+  anti_join(t.cusmod.rate, by = 't8d_item')
 
-# And again none
+# None missing from CusMod - tidy up
+
+remove(t.cusmod.old.lines, t.cusmod.old, t.cusmod.missing)
 
 # Remove the non-current lines
 
-t.WTO <- t.WTO.prev %>% 
-  select(line_number, Tariff_Code, Tariff_Description, Tariff_Code_short)
-
 t.cusmod.current <- t.cusmod.rate %>% 
-  select("t8d_item") %>% 
-  unique %>% 
-  anti_join(t.WTO, by = c("t8d_item" = "Tariff_Code"))
+  filter(!(t8d_item %in% affected_lines)) 
 
-t.WTO.lines  <-  t.WTO %>% 
+# Are all of the print lines in the 2023 WTO rendering.
+# And vice versa all 2023 WTO lines still there? 
+
+t.WTO <- t.WTO.prev %>% 
   select(line_number, Tariff_Code, Tariff_Description) %>% 
   filter(grepl('\\d{4}\\.\\d{2}\\.\\d{2}', Tariff_Code))
 
 # Now check whether all lines are in the previous WTO file
 
-cusmod_oldWTO <- t.cusmod.rate %>% 
-  left_join(t.WTO.lines, by = c("t8d_item" = "Tariff_Code"))
-
-# Everything in current CusMod has an existing corresponding line in 
-# the previous WTO
-#
-# Tidy up
-
-remove(affected_lines, cusmod_oldWTO, data_location, end_period,start_period, 
-       t.cusmod.current, t.cusmod.detail, t.cusmod.old, t.cusmod.old.error,  
-       t.print, t.print.8d, t.WTO.lines, t.WTO.prev)
+not_in_WTO <- t.WTO %>% anti_join(t.print.8d, by = c('Tariff_Code'= 't8d_item'))
+not_in_print <- t.print.8d %>% anti_join(t.WTO, by = c('t8d_item'='Tariff_Code'))
 
 # 
+# The tariff lines in the existing print and CusMod lines are all in the
+# previous WTO xlsx
+#
 # Just need to add the new rates to the existing WTO description segment
 # 
-
-#t.cusmod.rate.bak <- t.cusmod.rate
-#t.cusmod.rate <- t.cusmod.rate.bak
 
 t.cusmod.rate <- t.cusmod.rate %>%
   rename(Tariff_Code = t8d_item) %>% 
@@ -209,32 +195,29 @@ t.cusmod.rate <- t.cusmod.rate %>%
 
 t.cusmod.rate <- t.cusmod.rate %>%
   select(-c(Start.Date, Expiry.Date, max.Start, max.Expiry)) %>% 
-  mutate(Duty = ifelse(Rate.Formula == 1, 'Free',
-                       ifelse(Rate.Formula == 2, 'Parts',   
-                              ifelse(Rate.Formula == 3,
-                                     paste(Factor.A,'%',sep=''),
-                                     ## replace excise equivalent duty to MFN= 0
-                                     ifelse(Rate.Formula == 4,'Free', 
-                                            # remove excise equivalent duty component but keep MFN %
-                                            ifelse(Rate.Formula == 5,
-                                                   paste(Factor.A,'%',sep=''),'Other'))))),
-         Duty = gsub('\\.0*%','%',Duty),
-         Value.Rate = ifelse(Rate.Formula %in% c(1,4),0,
-                             ifelse(Rate.Formula == 2,0,
-                                    ifelse(Rate.Formula %in% c(3,5),
-                                           as.numeric(Factor.A)/100,NA))),
-         Qty.Rate = ifelse(Rate.Formula %in% c(1,3),0,
-                           ifelse(Rate.Formula == 2,0,
-                                  ifelse(Rate.Formula == 4,as.numeric(Factor.A),
-                                         ifelse(Rate.Formula == 5,as.numeric(Factor.B),NA))))) %>% 
+   mutate(Value.Rate = ifelse(Rate.Formula %in% c(1,4),0,
+                              ifelse(Rate.Formula == 2,0,
+                                     ifelse(Rate.Formula %in% c(3,5),
+                                            as.numeric(Factor.A)/100,NA))),
+          Qty.Rate = ifelse(Rate.Formula %in% c(1,3),0,
+                            ifelse(Rate.Formula == 2,0,
+                                   ifelse(Rate.Formula == 4,as.numeric(Factor.A),
+                                          ifelse(Rate.Formula == 5,as.numeric(Factor.B),0))))) %>%
   select(-c(Factor.A, Factor.B)) %>%
-  select(c(Tariff_Code, Rate.Group, Value.Rate, Qty.Rate)) %>% 
-  ungroup
+  select(c(Tariff_Code, Rate.Group, Rate.Formula, Value.Rate, Qty.Rate))
+
+# Remove parts lines
+
+t.parts <- t.cusmod.rate %>% filter(Rate.Formula == 2) %>% 
+  select()
+
+t.cusmod.rate <- t.cusmod.rate %>% filter(Rate.Formula != 2) %>% 
+  select(-Rate.Formula)
 
 t.rate.value <- t.cusmod.rate %>%
   select(-Qty.Rate) %>% 
   mutate(Value.Rate = if_else(Rate.Group=='NML'& is.na(Value.Rate), 0, Value.Rate)) %>% 
-  unique() %>% 
+  unique %>% 
   pivot_wider(names_from = Rate.Group, values_from = Value.Rate) %>% 
   mutate(AU = if_else(is.na(AU), NML, AU),
          NML = NML-AU,
@@ -287,11 +270,31 @@ t.rate.quantity <- t.cusmod.rate %>%
          AU = AU - AU) %>% 
   unique()
 
+# Test line
+PacPAC_not_equal <- t.rate.quantity %>% filter(PAC != Pac)
+# for quantity rates, PAC are correct
+PacPAC_not_equal <- t.rate.value %>% filter(PAC != Pac)
+# 2103.90.00 PAC 5%, should be free
+# 7008.00.00 PAC 5%, should be free
+PAC_nonzero<-t.rate.quantity %>% filter(PAC != 0)
+PAC_nonzero<-t.rate.value %>% filter(PAC != 0)
+# Correct PAC lines. Around 1/3 of the Pac rates are wrong - remove Pac
+
+t.rate.value <- t.rate.value %>% 
+  mutate(PAC = if_else(Tariff_Code == '2103.90.00', 0, PAC),
+         PAC = if_else(Tariff_Code == '7008.00.00', 0, PAC))
+#
+# Pac is wrong, PAC has a couple of erroneous lines and these are fixed here
+# Remove Pac rates
+#
+
 rate.qty <- t.rate.quantity %>% 
-  pivot_longer(cols = 2:21, names_to = 'Rate.Group', values_to = 'Qty.Rate')
+  select(-c(Duty, Pac)) %>% 
+  pivot_longer(cols = 2:20, names_to = 'Rate.Group', values_to = 'Qty.Rate')
 
 rate.value <- t.rate.value %>% 
-  pivot_longer(cols = 2:21, names_to = 'Rate.Group', values_to = 'Value.Rate')
+  select(-Pac) %>% 
+  pivot_longer(cols = 2:20, names_to = 'Rate.Group', values_to = 'Value.Rate')
 
 rates <- rate.value %>% left_join(rate.qty, by = c("Tariff_Code", "Rate.Group"))
 
@@ -300,45 +303,24 @@ rates$Qty.Rate <- round(rates$Qty.Rate, 4)
 levels(as.factor(rates$Value.Rate))
 levels(as.factor(rates$Qty.Rate))
 
-rates<-rates %>%
-  filter(!Tariff_Code %in% c('85232931', '37079010', '37050010'))%>% 
-  mutate(Qty.Rate = if_else(Tariff_Code %in% c('2105.00.21', '2105.00.29', '2105.00.31',
-                                               '2105.00.39', '2105.00.42', '2105.00.49',
-                                               '2106.90.92', '2106.90.93', '2106.90.94',
-                                               '2106.90.95', '2106.90.97', '2106.90.98',
-                                               '2204.10.18', '2204.21.13', '2204.21.18',
-                                               '2204.22.19', '2204.22.90', '2204.29.20',
-                                               '2204.29.90', '2205.10.33', '2205.10.38',
-                                               '2205.90.33', '2205.90.38', '2208.50.04',
-                                               '2208.60.19', '2208.60.29', '2208.70.60',
-                                               '2208.70.71', '2402.20.10', '2402.20.90', 
-                                               '2403.11.90', '2403.19.90', '2403.91.90', 
-                                               '2403.99.90', '2710.12.23', '2710.12.25',
-                                               '2710.12.29', '2710.20.25', '3606.10.09'), 0, Qty.Rate),
-         Qty.Rate = if_else(Tariff_Code %in% c('2208.50.08') & Rate.Group == 'PPP', 0, Qty.Rate))
+# rates<-rates %>%
+#   filter(!Tariff_Code %in% c('85232931', '37079010', '37050010'))%>%
+#   mutate(Qty.Rate = if_else(Tariff_Code %in% c('2105.00.21', '2105.00.29', '2105.00.31',
+#                                                '2105.00.39', '2105.00.42', '2105.00.49',
+#                                                '2106.90.92', '2106.90.93', '2106.90.94',
+#                                                '2106.90.95', '2106.90.97', '2106.90.98',
+#                                                '2204.10.18', '2204.21.13', '2204.21.18',
+#                                                '2204.22.19', '2204.22.90', '2204.29.20',
+#                                                '2204.29.90', '2205.10.33', '2205.10.38',
+#                                                '2205.90.33', '2205.90.38', '2208.50.04',
+#                                                '2208.60.19', '2208.60.29', '2208.70.60',
+#                                                '2208.70.71', '2402.20.10', '2402.20.90',
+#                                                '2403.11.90', '2403.19.90', '2403.91.90',
+#                                                '2403.99.90', '2710.12.23', '2710.12.25',
+#                                                '2710.12.29', '2710.20.25', '3606.10.09'), 0, Qty.Rate),
+#          Qty.Rate = if_else(Tariff_Code %in% c('2208.50.08') & Rate.Group == 'PPP', 0, Qty.Rate))
 
-# Errors RCEP should be 0.4
-
-rates_2208_50_06 <- rates %>% filter(Tariff_Code == '2208.50.06')
-rates <- rates %>% 
-  mutate(Qty.Rate = if_else(Tariff_Code == '2208.50.06' & Rate.Group == 'RCEP', 0.4, Qty.Rate))
-         
-rates_2208_60_21 <- rates %>% filter(Tariff_Code == '2208.60.21')
-rates <- rates %>% 
-  mutate(Qty.Rate = if_else(Tariff_Code == '2208.60.21' & Rate.Group == 'RCEP', 0.4, Qty.Rate))
-
-rates_2208_60_29 <- rates %>% filter(Tariff_Code == '2208.60.29') # Missing completely
-
-rates_2208_60_29 <- rates_2208_60_21 %>% 
-  mutate(Tariff_Code = '2208.60.29')
-
-rates <- rates %>% bind_rows(rates_2208_60_29)
-rates <- rates %>% 
-  mutate(Qty.Rate = if_else(Tariff_Code == '2208.60.29' & Rate.Group == 'RCEP', 0.4, Qty.Rate))
-
-# Fix of 2208.50 and 2208.60 
-
-saveRDS(rates, "WTD/rates2024.RDS")
+saveRDS(rates, paste(data_location, "rates2024.RDS"))
 
 t.rate.text <- rates %>% 
   mutate(Value.Rate = as.character(Value.Rate*100),
@@ -346,16 +328,20 @@ t.rate.text <- rates %>%
                               paste(Value.Rate, '%', sep='')),
          Qty.Rate = as.character(Qty.Rate),
          Qty.Rate = if_else(Qty.Rate == '0', '',
-                     if_else(Qty.Rate == '0.50', '+ 50c/L.al.',
-                      if_else(Qty.Rate == '0.47', '+ 47c/L.al.',
+                     if_else(Qty.Rate == '0.50', '+ 50c/l.al.',
+                      if_else(Qty.Rate == '0.47', '+ 47c/l.al.',
+                       if_else(Qty.Rate == '0.4', '+ 40c/l.al.',
                        if_else(Qty.Rate == '1.3', '+ $1.30/kg',
                         if_else(Qty.Rate == '1.5', '+ $1.50/kg',
-                                '+ $1.87/kg'))))))
+                                '+ $1.87/kg')))))))
 
+t.rates <- t.rate.text %>%
+  mutate(Rate = paste(Value.Rate, Qty.Rate, sep=''),
+         Rate = str_replace(Rate, '\\s\\+\\s$', '')) %>% 
+  select(-c(Value.Rate, Qty.Rate))
+  
+  
+  
 
-
-quantity_unit <- rates %>% 
-  filter(Qty.Rate > 0,
-         Qty.Rate < 1.3)
 
   
